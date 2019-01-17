@@ -1,4 +1,4 @@
-/*
+﻿/*
  * bootstrap-session-timeout
  * www.orangehilldev.com
  *
@@ -14,15 +14,18 @@
             title: 'Your Session is About to Expire!',
             message: 'Your session is about to expire.',
             logoutButton: 'Logout',
+            logoutButtonClass: 'btn-default',
             keepAliveButton: 'Stay Connected',
+            keepAliveButtonClass: 'btn-primary',
             keepAliveUrl: '/keep-alive',
             ajaxType: 'POST',
             ajaxData: '',
             redirUrl: '/timed-out',
             logoutUrl: '/log-out',
+            checkInterval: 10000, // 10 seconds
             warnAfter: 900000, // 15 minutes
             redirAfter: 1200000, // 20 minutes
-            keepAliveInterval: 5000,
+            keepAliveInterval: 5000, // 5 seconds
             keepAlive: true,
             ignoreUserActivity: false,
             onStart: false,
@@ -30,10 +33,14 @@
             onRedir: false,
             countdownMessage: false,
             countdownBar: false,
-            countdownSmart: false
+            countdownSmart: false,
+            countdownHolderClass: 'countdown-holder',
+            forceButtonClick: false,
+            modalClass: 'modal-lg',
         };
 
         var opt = defaults,
+            startTime,
             timer,
             countdown = {};
 
@@ -52,30 +59,30 @@
         if (typeof opt.onWarn !== 'function') {
             // If opt.countdownMessage is defined add a coundown timer message to the modal dialog
             var countdownMessage = opt.countdownMessage ?
-                '<p>' + opt.countdownMessage.replace(/{timer}/g, '<span class="countdown-holder"></span>') + '</p>' : '';
+                opt.countdownMessage.replace(/{timer}/g, '<span class="' + opt.countdownHolderClass + '"></span>') : '';
             var coundownBarHtml = opt.countdownBar ?
                 '<div class="progress"> \
                   <div class="progress-bar progress-bar-striped countdown-bar active" role="progressbar" style="min-width: 15px; width: 100%;"> \
-                    <span class="countdown-holder"></span> \
+                    <span class="' + opt.countdownHolderClass + '"></span> \
                   </div> \
                 </div>' : '';
 
             // Create timeout warning dialog
-            $('body').append('<div class="modal fade" id="session-timeout-dialog"> \
-              <div class="modal-dialog"> \
+            $('body').append('<div class="modal fade" id="session-timeout-dialog"' + (opt.forceButtonClick ?  ' data-backdrop="static" data-keyboard="false"' : '') + '> \
+              <div class="modal-dialog ' + opt.modalClass + '"> \
                 <div class="modal-content"> \
                   <div class="modal-header"> \
-                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button> \
+                    ' + (opt.forceButtonClick ? '' : '<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>') + ' \
                     <h4 class="modal-title">' + opt.title + '</h4> \
                   </div> \
                   <div class="modal-body"> \
-                    <p>' + opt.message + '</p> \
+                    ' + opt.message + ' \
                     ' + countdownMessage + ' \
                     ' + coundownBarHtml + ' \
                   </div> \
                   <div class="modal-footer"> \
-                    <button id="session-timeout-dialog-logout" type="button" class="btn btn-default">' + opt.logoutButton + '</button> \
-                    <button id="session-timeout-dialog-keepalive" type="button" class="btn btn-primary" data-dismiss="modal">' + opt.keepAliveButton + '</button> \
+                    <button id="session-timeout-dialog-logout" type="button" class="btn ' + opt.logoutButtonClass + '">' + opt.logoutButton + '</button> \
+                    <button id="session-timeout-dialog-keepalive" type="button" class="btn ' + opt.keepAliveButtonClass + '" data-dismiss="modal">' + opt.keepAliveButton + '</button> \
                   </div> \
                 </div> \
               </div> \
@@ -83,7 +90,7 @@
 
             // "Logout" button click
             $('#session-timeout-dialog-logout').on('click', function() {
-                window.location = opt.logoutUrl;
+                logout();
             });
             // "Stay Connected" button click
             $('#session-timeout-dialog').on('hide.bs.modal', function() {
@@ -121,7 +128,7 @@
             });
         }
 
-        // Keeps the server side connection live, by pingin url set in keepAliveUrl option.
+        // Keeps the server side connection live, by pinging url set in keepAliveUrl option.
         // KeepAlivePinged is a helper var to ensure the functionality of the keepAliveInterval option
         var keepAlivePinged = false;
 
@@ -140,9 +147,47 @@
             }
         }
 
+        function logout() {
+            window.location = opt.logoutUrl;
+        }
+
+        function redirect() {
+            // Check for onRedir callback function and if there is none, launch redirect
+            if (typeof opt.onRedir !== 'function') {
+                window.location = opt.redirUrl;
+            } else {
+                opt.onRedir(opt);
+            }
+        }
+
+        function showDialog() {
+            // Check for onWarn callback function and if there is none, launch dialog
+            if (typeof opt.onWarn !== 'function') {
+                $('#session-timeout-dialog').modal('show');
+            } else {
+                opt.onWarn(opt);
+            }
+            // Start dialog timer
+            startDialogTimer();
+        }
+
+        function startTimer() {
+            timer = setInterval(function () {
+                var secondsSinceStart = (new Date().getTime() - startTime);
+
+                if (secondsSinceStart >= opt.redirAfter) {
+                    // Too much time has passed, redirect
+                    redirect();
+                } else if (secondsSinceStart >= opt.warnAfter) {
+                    // Show the warning dialog
+                    showDialog();
+                }
+            }, opt.checkInterval);
+        }
+
         function startSessionTimer() {
             // Clear session timer
-            clearTimeout(timer);
+            clearInterval(timer);
             if (opt.countdownMessage || opt.countdownBar) {
                 startCountdownTimer('session', true);
             }
@@ -156,36 +201,17 @@
                 keepAlive();
             }
 
-            // Set session timer
-            timer = setTimeout(function() {
-                // Check for onWarn callback function and if there is none, launch dialog
-                if (typeof opt.onWarn !== 'function') {
-                    $('#session-timeout-dialog').modal('show');
-                } else {
-                    opt.onWarn(opt);
-                }
-                // Start dialog timer
-                startDialogTimer();
-            }, opt.warnAfter);
+            startTime = new Date().getTime();
+
+            startTimer();
         }
 
         function startDialogTimer() {
-            // Clear session timer
-            clearTimeout(timer);
             if (!$('#session-timeout-dialog').hasClass('in') && (opt.countdownMessage || opt.countdownBar)) {
                 // If warning dialog is not already open and either opt.countdownMessage
                 // or opt.countdownBar are set start countdown
                 startCountdownTimer('dialog', true);
             }
-            // Set dialog timer
-            timer = setTimeout(function() {
-                // Check for onRedir callback function and if there is none, launch redirect
-                if (typeof opt.onRedir !== 'function') {
-                    window.location = opt.redirUrl;
-                } else {
-                    opt.onRedir(opt);
-                }
-            }, (opt.redirAfter - opt.warnAfter));
         }
 
         function startCountdownTimer(type, reset) {
@@ -207,7 +233,7 @@
                 countdown.percentLeft = Math.floor(countdown.timeLeft / (opt.redirAfter / 1000) * 100);
             }
             // Set countdown message time value
-            var countdownEl = $('.countdown-holder');
+            var countdownEl = $('.' + opt.countdownHolderClass);
             var secondsLeft = countdown.timeLeft >= 0 ? countdown.timeLeft : 0;
             if (opt.countdownSmart) {
                 var minLeft = Math.floor(secondsLeft / 60);
@@ -237,6 +263,5 @@
 
         // Start session timer
         startSessionTimer();
-
     };
 })(jQuery);
